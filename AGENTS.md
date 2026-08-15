@@ -11,3 +11,17 @@ The focus is local development and testing so you will not push to remote or ope
 - Always start a new branch.
 - Always commit atomically.
 - Always test implemetation.
+
+## Agent skills
+
+### Issue tracker
+
+Issues use local Markdown files. Agents need explicit approval before creating an issue. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The tracker uses the five standard triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+The repo uses a single domain context. See `docs/agents/domain.md`.
