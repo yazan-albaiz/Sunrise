@@ -43,6 +43,8 @@ Do not go and argue/chat there, you can do that on the discord.
 
 Pull Requests are welcome. Please follow these rules:
 
+For local tests, see [Branch Builds](docs/development/branch-builds.md).
+
 - **No Copyrighted Data** - All game data should be extracted at runtime.
 - **Code Formatting** - Stick to the provided clang-format and clang-tidy configs.
 - **Clean Code** - Try to post readable high quality code, follow the projects existing style of

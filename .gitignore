@@ -1,4 +1,5 @@
-/.vs/
+/.worktrees/
+ /.vs/
 /.idea/
 /.vscode/
 /.direnv/
