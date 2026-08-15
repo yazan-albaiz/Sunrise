@@ -9,8 +9,9 @@ Project Sunrise is a community mod that restores playability in old builds of De
 The focus is local development and testing so you will not push to remote or open PRs unless I explicitly ask.
 
 - Always start a new branch.
+- Name branches `feature/<name>`, `fix/<name>`, `chore/<name>`, or `refactor/<name>`.
 - Always commit atomically.
-- Always test implemetation.
+- Always test implementation.
 - Before a task, fetch `origin` and `upstream`.
 - Merge `upstream/master` into local `master` before you create the task branch.
 - After tests pass, merge the task branch into local `master`.
