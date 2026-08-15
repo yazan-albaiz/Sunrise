@@ -11,6 +11,10 @@ The focus is local development and testing so you will not push to remote or ope
 - Always start a new branch.
 - Always commit atomically.
 - Always test implemetation.
+- Before a task, fetch `origin` and `upstream`.
+- Merge `upstream/master` into local `master` before you create the task branch.
+- After tests pass, merge the task branch into local `master`.
+- Push only when the user gives a direct request.
 
 ## Agent skills
 
