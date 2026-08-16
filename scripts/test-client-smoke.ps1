@@ -57,6 +57,30 @@ public static class SunriseSmokeInput
     public static extern bool SetForegroundWindow(IntPtr window);
 
     [DllImport("user32.dll")]
+    public static extern bool BringWindowToTop(IntPtr window);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetFocus(IntPtr window);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr window, IntPtr processId);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    public static extern bool AttachThreadInput(uint first, uint second, bool attach);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr window, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr window, int command);
 
     [DllImport("user32.dll")]
@@ -66,6 +90,15 @@ public static class SunriseSmokeInput
     public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
 }
 '@
+
+$null = [SunriseSmokeInput]::SetProcessDPIAware()
+
+$uiTargets = @{
+  CharacterList = [pscustomobject]@{ X = 1810 / 2560; FirstY = 610; RowHeight = 148 }
+  Earth = [pscustomobject]@{ X = 1265 / 2560; Y = 820 / 1440 }
+  Trostland = [pscustomobject]@{ X = 1880 / 2560; Y = 1350 / 1440 }
+  Launch = [pscustomobject]@{ X = 2180 / 2560; Y = 1200 / 1440 }
+}
 
 function Resolve-Commit {
   param([string]$GitRef)
@@ -135,10 +168,13 @@ function Wait-LogPattern {
     [pscustomobject]$Cursor,
     [string]$Pattern,
     [int]$TimeoutSeconds,
-    [string]$Stage
+    [string]$Stage,
+    [scriptblock]$Pulse,
+    [int]$PulseIntervalSeconds = 5
   )
 
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $nextPulse = [datetime]::MinValue
   while ((Get-Date) -lt $deadline) {
     $Process.Refresh()
     if ($Process.HasExited) {
@@ -151,6 +187,10 @@ function Wait-LogPattern {
     }
     if ($text -match $Pattern) {
       return
+    }
+    if ($null -ne $Pulse -and (Get-Date) -ge $nextPulse) {
+      & $Pulse
+      $nextPulse = (Get-Date).AddSeconds($PulseIntervalSeconds)
     }
     Start-Sleep -Seconds 1
   }
@@ -185,13 +225,74 @@ function Get-ClientArea {
   }
 }
 
+function Get-GameViewport {
+  param([System.Diagnostics.Process]$Process)
+
+  $area = Get-ClientArea -Process $Process
+  $knownSizes = @(
+    [pscustomobject]@{ Width = 1280; Height = 720 },
+    [pscustomobject]@{ Width = 1920; Height = 1080 },
+    [pscustomobject]@{ Width = 2560; Height = 1440 },
+    [pscustomobject]@{ Width = 3840; Height = 2160 }
+  )
+  $size = $knownSizes | Where-Object {
+    [math]::Abs($area.Width - $_.Width) -le 32 `
+      -and [math]::Abs($area.Height - $_.Height) -le 64
+  } | Select-Object -First 1
+  if ($null -eq $size) {
+    throw "The smoke route requires a known 16:9 game size. Current size: $($area.Width)x$($area.Height)."
+  }
+
+  return [pscustomobject]@{
+    Window = $area.Window
+    Left = $area.Left
+    Top = $area.Top
+    Width = $size.Width
+    Height = $size.Height
+  }
+}
+
 function Set-GameForeground {
   param([System.Diagnostics.Process]$Process)
 
   $area = Get-ClientArea -Process $Process
-  $null = [SunriseSmokeInput]::ShowWindow($area.Window, 9)
-  $null = [SunriseSmokeInput]::SetForegroundWindow($area.Window)
+  $currentThread = [SunriseSmokeInput]::GetCurrentThreadId()
+  $windowThread = [SunriseSmokeInput]::GetWindowThreadProcessId($area.Window, [IntPtr]::Zero)
+  $attached = $currentThread -ne $windowThread `
+    -and [SunriseSmokeInput]::AttachThreadInput($currentThread, $windowThread, $true)
+  try {
+    $null = [SunriseSmokeInput]::ShowWindow($area.Window, 3)
+    $null = [SunriseSmokeInput]::BringWindowToTop($area.Window)
+    [SunriseSmokeInput]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)
+    [SunriseSmokeInput]::keybd_event(0x12, 0, 0x0002, [UIntPtr]::Zero)
+    $null = [SunriseSmokeInput]::SetForegroundWindow($area.Window)
+    $null = [SunriseSmokeInput]::SetFocus($area.Window)
+  }
+  finally {
+    if ($attached) {
+      $null = [SunriseSmokeInput]::AttachThreadInput($currentThread, $windowThread, $false)
+    }
+  }
   Start-Sleep -Milliseconds 500
+  $foregroundRoot = [SunriseSmokeInput]::GetAncestor(
+    [SunriseSmokeInput]::GetForegroundWindow(), 2
+  )
+  if ($foregroundRoot -ne $area.Window) {
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+      $null = $shell.AppActivate($Process.Id)
+    }
+    finally {
+      $null = [System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell)
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  $foregroundRoot = [SunriseSmokeInput]::GetAncestor(
+    [SunriseSmokeInput]::GetForegroundWindow(), 2
+  )
+  if ($foregroundRoot -ne $area.Window) {
+    throw 'Could not give input focus to Destiny 2 after two focus requests.'
+  }
 }
 
 function Invoke-GameClick {
@@ -202,7 +303,7 @@ function Invoke-GameClick {
   )
 
   Set-GameForeground -Process $Process
-  $area = Get-ClientArea -Process $Process
+  $area = Get-GameViewport -Process $Process
   if ($area.Width -lt 1280 -or $area.Height -lt 720) {
     throw "The game client area is too small: $($area.Width)x$($area.Height)."
   }
@@ -213,6 +314,7 @@ function Invoke-GameClick {
     throw 'Could not move the mouse pointer into the Destiny 2 window.'
   }
   [SunriseSmokeInput]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 100
   [SunriseSmokeInput]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
 }
 
@@ -258,11 +360,9 @@ function Save-FailureScreenshot {
 
 $repoRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $gameRoot = [System.IO.Path]::GetFullPath($GameDirectory)
-$liveGameRoot = [System.IO.Path]::GetFullPath(
-  'C:\Program Files (x86)\Steam\steamapps\common\Destiny 2'
-)
-if ($gameRoot.Equals($liveGameRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-  throw 'The client smoke test cannot use the live Destiny 2 directory.'
+$approvedGameRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot 'ProjectSunrise'))
+if (-not $gameRoot.Equals($approvedGameRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw "The client smoke test can use only the approved isolated client: $approvedGameRoot"
 }
 
 $gameExe = Join-Path $gameRoot 'destiny2.exe'
@@ -338,11 +438,13 @@ try {
 
   Wait-LogPattern -Process $gameProcess -LogPath $logPath -Cursor $startCursor `
     -Pattern 'ev=bootflow stage=character_select result=held' `
-    -TimeoutSeconds $StartTimeoutSeconds -Stage 'character select'
+    -TimeoutSeconds $StartTimeoutSeconds -Stage 'character select' `
+    -Pulse { Invoke-GameKey -Process $gameProcess -VirtualKey 0x0D }
 
   $orbitCursor = Get-LogCursor -Path $logPath
-  $characterY = (610 + (148 * $CharacterIndex)) / 1440
-  Invoke-GameClick -Process $gameProcess -XRatio (1810 / 2560) -YRatio $characterY
+  $characterY = ($uiTargets.CharacterList.FirstY `
+    + ($uiTargets.CharacterList.RowHeight * $CharacterIndex)) / 1440
+  Invoke-GameClick -Process $gameProcess -XRatio $uiTargets.CharacterList.X -YRatio $characterY
   Wait-LogPattern -Process $gameProcess -LogPath $logPath -Cursor $orbitCursor `
     -Pattern 'world_controller: successfully changed world to: orbit_d2' `
     -TimeoutSeconds $WorldTimeoutSeconds -Stage 'orbit'
@@ -350,13 +452,14 @@ try {
   Start-Sleep -Seconds 8
   Invoke-GameKey -Process $gameProcess -VirtualKey 0x4D
   Start-Sleep -Seconds 4
-  Invoke-GameClick -Process $gameProcess -XRatio (1265 / 2560) -YRatio (820 / 1440)
+  Invoke-GameClick -Process $gameProcess -XRatio $uiTargets.Earth.X -YRatio $uiTargets.Earth.Y
   Start-Sleep -Seconds 4
-  Invoke-GameClick -Process $gameProcess -XRatio (1880 / 2560) -YRatio (1350 / 1440)
+  Invoke-GameClick -Process $gameProcess `
+    -XRatio $uiTargets.Trostland.X -YRatio $uiTargets.Trostland.Y
   Start-Sleep -Seconds 2
 
   $destinationCursor = Get-LogCursor -Path $logPath
-  Invoke-GameClick -Process $gameProcess -XRatio (2180 / 2560) -YRatio (1200 / 1440)
+  Invoke-GameClick -Process $gameProcess -XRatio $uiTargets.Launch.X -YRatio $uiTargets.Launch.Y
   Wait-LogPattern -Process $gameProcess -LogPath $logPath -Cursor $destinationCursor `
     -Pattern 'world_controller: successfully changed world to: edz_freeroam' `
     -TimeoutSeconds $WorldTimeoutSeconds -Stage 'EDZ Trostland'

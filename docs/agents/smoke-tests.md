@@ -54,6 +54,12 @@ For item acquisition, equipment, and socket plug work, require these ordered res
 Add direct regression coverage for each state change first. Add stable Client input steps only when
 the test account supplies the required owned items. Do not hard-code item definitions in the test.
 
+The current runner does not perform these three item actions. The isolated account does not provide
+a stable owned-item fixture, and Sunrise has no test command seam for these actions. Fixed item hashes
+or more screen coordinates would break the project rules. Add the feature route after a test command
+can select valid owned items from installed data. Until then, use the regression tests for item state
+changes and use this runner only for launch and activity load.
+
 ## Failure rules
 
 - A required hook failure fails the test.

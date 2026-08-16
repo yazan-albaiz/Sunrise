@@ -87,11 +87,10 @@ try {
 
     if ($Deploy) {
       $gameRoot = [System.IO.Path]::GetFullPath($GameDirectory)
-      $liveGameRoot = [System.IO.Path]::GetFullPath(
-        'C:\Program Files (x86)\Steam\steamapps\common\Destiny 2'
-      )
-      if ($gameRoot.Equals($liveGameRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Deployment to the live Destiny 2 directory is not allowed.'
+      $approvedGameRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot 'ProjectSunrise'))
+      if (-not $gameRoot.Equals($approvedGameRoot,
+                                [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Deployment can use only the approved isolated client: $approvedGameRoot"
       }
 
       $gameExe = Join-Path $gameRoot 'destiny2.exe'
