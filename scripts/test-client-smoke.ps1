@@ -29,6 +29,31 @@ using System.Runtime.InteropServices;
 public static class SunriseSmokeInput
 {
     [StructLayout(LayoutKind.Sequential)]
+    public struct MouseInput
+    {
+        public int Dx;
+        public int Dy;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public UIntPtr ExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct InputValue
+    {
+        [FieldOffset(0)]
+        public MouseInput Mouse;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Input
+    {
+        public uint Type;
+        public InputValue Value;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct Point
     {
         public int X;
@@ -83,11 +108,50 @@ public static class SunriseSmokeInput
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr window, int command);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint inputCount, Input[] inputs, int inputSize);
+
     [DllImport("user32.dll")]
-    public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
+    public static extern int GetSystemMetrics(int index);
 
     [DllImport("user32.dll")]
     public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
+
+    public static void ClickAt(int x, int y)
+    {
+        const uint mouseInput = 0;
+        const uint move = 0x0001;
+        const uint leftDown = 0x0002;
+        const uint leftUp = 0x0004;
+        const uint virtualDesk = 0x4000;
+        const uint absolute = 0x8000;
+        int left = GetSystemMetrics(76);
+        int top = GetSystemMetrics(77);
+        int width = GetSystemMetrics(78);
+        int height = GetSystemMetrics(79);
+        int normalizedX = (int)Math.Round((x - left) * 65535.0 / (width - 1));
+        int normalizedY = (int)Math.Round((y - top) * 65535.0 / (height - 1));
+        Input[] movement = new Input[1];
+        movement[0].Type = mouseInput;
+        movement[0].Value.Mouse.Dx = normalizedX;
+        movement[0].Value.Mouse.Dy = normalizedY;
+        movement[0].Value.Mouse.Flags = move | virtualDesk | absolute;
+        int inputSize = Marshal.SizeOf(typeof(Input));
+        if (SendInput(1, movement, inputSize) != 1)
+        {
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        }
+        System.Threading.Thread.Sleep(750);
+        Input[] click = new Input[2];
+        click[0].Type = mouseInput;
+        click[0].Value.Mouse.Flags = leftDown;
+        click[1].Type = mouseInput;
+        click[1].Value.Mouse.Flags = leftUp;
+        if (SendInput((uint)click.Length, click, inputSize) != click.Length)
+        {
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
 }
 '@
 
@@ -95,8 +159,10 @@ $null = [SunriseSmokeInput]::SetProcessDPIAware()
 
 $uiTargets = @{
   CharacterList = [pscustomobject]@{ X = 1810 / 2560; FirstY = 610; RowHeight = 148 }
+  OpenDirector = [pscustomobject]@{ X = 1270 / 2560; Y = 1154 / 1440 }
   Earth = [pscustomobject]@{ X = 1265 / 2560; Y = 820 / 1440 }
   Trostland = [pscustomobject]@{ X = 1880 / 2560; Y = 1350 / 1440 }
+  TrostlandConfirm = [pscustomobject]@{ X = 1860 / 2560; Y = 700 / 1440 }
   Launch = [pscustomobject]@{ X = 2180 / 2560; Y = 1200 / 1440 }
 }
 
@@ -310,12 +376,7 @@ function Invoke-GameClick {
 
   $x = $area.Left + [math]::Round($area.Width * $XRatio)
   $y = $area.Top + [math]::Round($area.Height * $YRatio)
-  if (-not [SunriseSmokeInput]::SetCursorPos($x, $y)) {
-    throw 'Could not move the mouse pointer into the Destiny 2 window.'
-  }
-  [SunriseSmokeInput]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
-  Start-Sleep -Milliseconds 100
-  [SunriseSmokeInput]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+  [SunriseSmokeInput]::ClickAt($x, $y)
 }
 
 function Invoke-GameKey {
@@ -441,6 +502,8 @@ try {
     -TimeoutSeconds $StartTimeoutSeconds -Stage 'character select' `
     -Pulse { Invoke-GameKey -Process $gameProcess -VirtualKey 0x0D }
 
+  Invoke-GameKey -Process $gameProcess -VirtualKey 0x1B
+  Start-Sleep -Milliseconds 750
   $orbitCursor = Get-LogCursor -Path $logPath
   $characterY = ($uiTargets.CharacterList.FirstY `
     + ($uiTargets.CharacterList.RowHeight * $CharacterIndex)) / 1440
@@ -450,13 +513,17 @@ try {
     -TimeoutSeconds $WorldTimeoutSeconds -Stage 'orbit'
 
   Start-Sleep -Seconds 8
-  Invoke-GameKey -Process $gameProcess -VirtualKey 0x4D
-  Start-Sleep -Seconds 4
+  Invoke-GameClick -Process $gameProcess `
+    -XRatio $uiTargets.OpenDirector.X -YRatio $uiTargets.OpenDirector.Y
+  Start-Sleep -Seconds 5
   Invoke-GameClick -Process $gameProcess -XRatio $uiTargets.Earth.X -YRatio $uiTargets.Earth.Y
-  Start-Sleep -Seconds 4
+  Start-Sleep -Seconds 5
   Invoke-GameClick -Process $gameProcess `
     -XRatio $uiTargets.Trostland.X -YRatio $uiTargets.Trostland.Y
-  Start-Sleep -Seconds 2
+  Start-Sleep -Seconds 3
+  Invoke-GameClick -Process $gameProcess `
+    -XRatio $uiTargets.TrostlandConfirm.X -YRatio $uiTargets.TrostlandConfirm.Y
+  Start-Sleep -Seconds 3
 
   $destinationCursor = Get-LogCursor -Path $logPath
   Invoke-GameClick -Process $gameProcess -XRatio $uiTargets.Launch.X -YRatio $uiTargets.Launch.Y
