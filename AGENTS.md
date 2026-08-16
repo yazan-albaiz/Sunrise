@@ -13,7 +13,7 @@ The focus is local development and testing so you will not push to remote or ope
 - Always commit atomically.
 - Always test implementation.
 - Before a task, fetch `origin` and `upstream`.
-- Merge `upstream/master` into local `master` before you create the task branch.
+- Use a task branch from the intended base commit.
 - After tests pass, merge the task branch into local `master`.
 - Push only when the user gives a direct request.
 
@@ -30,3 +30,11 @@ The tracker uses the five standard triage labels. See `docs/agents/triage-labels
 ### Domain docs
 
 The repo uses a single domain context. See `docs/agents/domain.md`.
+
+### Fork and PR integration
+
+For fork, PR, upstream, or multi-branch work, see `docs/agents/fork-integration.md`.
+
+### Sunrise menu
+
+For Sunrise menu changes, see `docs/agents/menu-development.md`.
