@@ -313,8 +313,8 @@ function Get-GameViewport {
     Window = $area.Window
     Left = $area.Left
     Top = $area.Top
-    Width = $size.Width
-    Height = $size.Height
+    Width = $area.Width
+    Height = $area.Height
   }
 }
 
@@ -475,6 +475,7 @@ if ($hadSettings) {
 
 $gameProcess = $null
 $passed = $false
+$shutdownFailure = $null
 try {
   & (Join-Path $PSScriptRoot 'build-ref.ps1') $commit `
     -Configuration $Configuration -Deploy -GameDirectory $gameRoot
@@ -546,20 +547,34 @@ finally {
     Copy-Item -LiteralPath $logPath -Destination $capturedLog -Force
   }
   if ($null -ne $gameProcess -and -not $gameProcess.HasExited) {
-    Stop-Process -Id $gameProcess.Id
-    $gameProcess.WaitForExit(15000) | Out-Null
+    try {
+      Stop-Process -Id $gameProcess.Id -ErrorAction Stop
+      if (-not $gameProcess.WaitForExit(15000) -or -not $gameProcess.HasExited) {
+        $shutdownFailure =
+          "Destiny 2 did not stop within 15 seconds. Backups remain in $artifactDirectory."
+      }
+    }
+    catch {
+      $shutdownFailure =
+        "Could not confirm that Destiny 2 stopped. Backups remain in $artifactDirectory. $($_.Exception.Message)"
+    }
   }
-  if ($hadDll) {
-    Copy-Item -LiteralPath $backupDll -Destination $targetDll -Force
+  if ($null -eq $shutdownFailure) {
+    if ($hadDll) {
+      Copy-Item -LiteralPath $backupDll -Destination $targetDll -Force
+    }
+    elseif (Test-Path -LiteralPath $targetDll -PathType Leaf) {
+      Remove-Item -LiteralPath $targetDll
+    }
+    if ($hadSettings) {
+      Copy-Item -LiteralPath $backupSettings -Destination $settingsPath -Force
+    }
+    elseif (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
+      Remove-Item -LiteralPath $settingsPath
+    }
   }
-  elseif (Test-Path -LiteralPath $targetDll -PathType Leaf) {
-    Remove-Item -LiteralPath $targetDll
-  }
-  if ($hadSettings) {
-    Copy-Item -LiteralPath $backupSettings -Destination $settingsPath -Force
-  }
-  elseif (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
-    Remove-Item -LiteralPath $settingsPath
+  else {
+    $passed = $false
   }
 
   $result = [pscustomobject]@{
@@ -571,4 +586,7 @@ finally {
   }
   $result | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDirectory 'result.json')
   Write-Host "Smoke artifacts: $artifactDirectory"
+  if ($null -ne $shutdownFailure) {
+    throw $shutdownFailure
+  }
 }
