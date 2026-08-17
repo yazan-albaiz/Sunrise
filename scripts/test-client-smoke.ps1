@@ -159,10 +159,9 @@ $null = [SunriseSmokeInput]::SetProcessDPIAware()
 
 $uiTargets = @{
   CharacterList = [pscustomobject]@{ X = 1810 / 2560; FirstY = 610; RowHeight = 148 }
-  OpenDirector = [pscustomobject]@{ X = 1270 / 2560; Y = 1154 / 1440 }
+  CharacterAction = [pscustomobject]@{ X = 2205 / 2560; Y = 610 / 1440 }
   Earth = [pscustomobject]@{ X = 1265 / 2560; Y = 820 / 1440 }
-  Trostland = [pscustomobject]@{ X = 1880 / 2560; Y = 1350 / 1440 }
-  TrostlandConfirm = [pscustomobject]@{ X = 1860 / 2560; Y = 700 / 1440 }
+  TrostlandMarker = [pscustomobject]@{ X = 1890 / 2560; Y = 1220 / 1440 }
   Launch = [pscustomobject]@{ X = 2180 / 2560; Y = 1200 / 1440 }
 }
 
@@ -390,6 +389,22 @@ function Invoke-GameKey {
   [SunriseSmokeInput]::keybd_event($VirtualKey, 0, 0x0002, [UIntPtr]::Zero)
 }
 
+function Invoke-HeldGameKey {
+  param(
+    [System.Diagnostics.Process]$Process,
+    [byte]$VirtualKey
+  )
+
+  Set-GameForeground -Process $Process
+  [SunriseSmokeInput]::keybd_event($VirtualKey, 0, 0, [UIntPtr]::Zero)
+  try {
+    Start-Sleep -Milliseconds 250
+  }
+  finally {
+    [SunriseSmokeInput]::keybd_event($VirtualKey, 0, 0x0002, [UIntPtr]::Zero)
+  }
+}
+
 function Save-FailureScreenshot {
   param(
     [System.Diagnostics.Process]$Process,
@@ -503,27 +518,26 @@ try {
     -TimeoutSeconds $StartTimeoutSeconds -Stage 'character select' `
     -Pulse { Invoke-GameKey -Process $gameProcess -VirtualKey 0x0D }
 
-  Invoke-GameKey -Process $gameProcess -VirtualKey 0x1B
-  Start-Sleep -Milliseconds 750
   $orbitCursor = Get-LogCursor -Path $logPath
   $characterY = ($uiTargets.CharacterList.FirstY `
     + ($uiTargets.CharacterList.RowHeight * $CharacterIndex)) / 1440
+  Invoke-GameClick -Process $gameProcess -XRatio $uiTargets.CharacterList.X -YRatio $characterY
+  Invoke-GameClick -Process $gameProcess `
+    -XRatio $uiTargets.CharacterAction.X -YRatio $uiTargets.CharacterAction.Y
+  Start-Sleep -Milliseconds 1500
+  Invoke-GameKey -Process $gameProcess -VirtualKey 0x1B
   Invoke-GameClick -Process $gameProcess -XRatio $uiTargets.CharacterList.X -YRatio $characterY
   Wait-LogPattern -Process $gameProcess -LogPath $logPath -Cursor $orbitCursor `
     -Pattern 'world_controller: successfully changed world to: orbit_d2' `
     -TimeoutSeconds $WorldTimeoutSeconds -Stage 'orbit'
 
   Start-Sleep -Seconds 8
-  Invoke-GameClick -Process $gameProcess `
-    -XRatio $uiTargets.OpenDirector.X -YRatio $uiTargets.OpenDirector.Y
+  Invoke-HeldGameKey -Process $gameProcess -VirtualKey 0x4D
   Start-Sleep -Seconds 5
   Invoke-GameClick -Process $gameProcess -XRatio $uiTargets.Earth.X -YRatio $uiTargets.Earth.Y
   Start-Sleep -Seconds 5
   Invoke-GameClick -Process $gameProcess `
-    -XRatio $uiTargets.Trostland.X -YRatio $uiTargets.Trostland.Y
-  Start-Sleep -Seconds 3
-  Invoke-GameClick -Process $gameProcess `
-    -XRatio $uiTargets.TrostlandConfirm.X -YRatio $uiTargets.TrostlandConfirm.Y
+    -XRatio $uiTargets.TrostlandMarker.X -YRatio $uiTargets.TrostlandMarker.Y
   Start-Sleep -Seconds 3
 
   $destinationCursor = Get-LogCursor -Path $logPath
